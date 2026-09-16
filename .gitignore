@@ -1,0 +1,27 @@
+# SQLite
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-journal
+
+# backups / tmp
+/tmp/
+tmp/
+*.tmp
+*.bak
+*.orig
+*~
+*.swp
+
+# logs
+/logs/
+*.log
+.vscode-server/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
