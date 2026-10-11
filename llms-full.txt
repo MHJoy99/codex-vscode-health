@@ -1,0 +1,60 @@
+codex-vscode-health: full description
+
+What it is
+codex-vscode-health is a health gate for the Codex VS Code extension's renderer_ready_timeout failures on remote hosts. It is a single bash script, bin/vscode-health.sh, plus three docs (DIAGNOSIS, PREVENTION, RUNBOOK). It is MIT licensed by MHJoy99 and labelled experimental (the shellcheck badge is still TODO). It is not affiliated with OpenAI or Microsoft.
+
+The problem
+The Codex sidebar in VS Code fails to render, but the codex app-server backend is healthy. The client log shows:
+  [CodexWebviewProvider] Webview renderer did not become ready after 30000ms
+  reason=renderer_ready_timeout
+while the server log shows:
+  codex app-server: Initialize received id=1
+The renderer budget is a fixed 30 seconds. In the documented incident (2026-09-16, VS Code 1.132.0, 6 vCPU, 7.8G RAM host) server-side memory and load pressure delayed extension-host activation past that budget: load 7.2, about 1.8G memory available, 3.6G swap used, 2 extensionHost processes (about 1.5G), 2 "kilo serve" processes (about 1.4G), about 20 php-fpm processes, ~/.codex at 459M with logs_2.sqlite at 136M, disk at 84%, several AI extensions all activating on onStartupFinished, and Codex extension version drift (26.5908 on disk versus 26.908 in the log). The Codex CLI ("codex" in a terminal) keeps working when the webview does not.
+
+What the script checks
+1. Memory and swap (free -m): warn if available memory < 2500M, critical if < 1500M, warn if swap used > 3000M.
+2. CPU load (/proc/loadavg, 1 minute): warn if > nproc, critical if > 1.5 x nproc.
+3. Disk usage of /: warn at 80% or more, critical at 90% or more.
+4. Duplicate "kilo serve --port 0" processes: warn if more than one.
+5. extensionHost process count: warn if more than one (use Developer: Reload Window, do not pkill).
+6. ~/.codex bloat: warn if the directory is > 400M or logs_2.sqlite is > 100M; also warns if Codex.log contains stale_rollout_path_retained.
+7. Codex extension installs (openai.chatgpt-* under ~/.vscode-server/extensions): warn if there are none or more than one.
+8. AI extension pile-up: tracks five extensions (kilocode.kilo-code, qwenlm.qwen-code-vscode-ide-companion, rooveterinaryinc.roo-cline, google.google-antigravity, openai.chatgpt); warn if more than three are installed.
+9. VS Code log sets older than 14 days in ~/.vscode-server/data/logs.
+Memory, load and disk can be critical; the others only warn.
+
+Exit codes
+0 healthy, 1 warning, 2 critical. On critical, the script also prints client-side steps: Developer: Reload With Extensions Disabled and enable only Codex, update the Codex extension and match local and remote VS Code versions, clear %APPDATA%\Code\Cache and GPUCache and try --disable-gpu, and fall back to the codex CLI.
+
+Usage
+  git clone https://github.com/MHJoy99/codex-vscode-health.git
+  cd codex-vscode-health
+  chmod +x bin/vscode-health.sh
+  bin/vscode-health.sh          # read-only check, safe in cron/SSH
+  bin/vscode-health.sh --fix    # check + safe fixes only
+Requirements: bash with coreutils and procps (the optional VACUUM path uses sqlite3). It reads ~/.vscode-server and ~/.codex on the remote host.
+
+What --fix does (and only this)
+- Kills older duplicate "kilo serve --port 0" processes, keeping the newest.
+- Prunes ~/.vscode-server/data/logs/20* sets older than 14 days.
+- Backs up and runs VACUUM on ~/.codex/logs_2.sqlite, only when app-server is stopped.
+It never touches php-fpm, mysql, nginx, reverb, queue workers, prod htdocs, the newest kilo serve, extensionHost, or Codex session rows. Never run --fix unattended; in cron use check-only mode, for example:
+  */15 * * * * /root/codex-vscode-health/bin/vscode-health.sh >> ~/.codex/health.log 2>&1
+
+Runbook (docs/RUNBOOK.md), follow in order and stop at the first fix
+1. Confirm the backend is healthy (Initialize received id=1 plus renderer_ready_timeout in Codex.log).
+2. Run bin/vscode-health.sh and read the exit code.
+3. Run bin/vscode-health.sh --fix.
+4. Developer: Reload Window; then Reload With Extensions Disabled and enable only Codex.
+5. Reinstall the Codex extension on version drift (exactly one openai.chatgpt-* install).
+6. VACUUM ~/.codex/logs_2.sqlite with a backup, only while app-server is stopped.
+7. Clear %APPDATA%\Code\Cache and GPUCache on the Windows client; try code --disable-gpu.
+
+Limits and honesty
+Thresholds are tuned from one incident on one host (6 vCPU, 7.8G RAM); the project is experimental. Contribution rules: thresholds must cite measured incident data, no destructive fixes, run shellcheck and bash -n before a PR. When reporting a case, scrub Codex.log first and never paste tokens or ~/.codex/auth.json.
+
+Links
+Website: https://mhjoy99.github.io/codex-vscode-health/
+Repository: https://github.com/MHJoy99/codex-vscode-health
+Issues: https://github.com/MHJoy99/codex-vscode-health/issues
+License: MIT (https://github.com/MHJoy99/codex-vscode-health/blob/main/LICENSE)

@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>codex-vscode-health: Fix Codex renderer_ready_timeout</title>
+<meta name="description" content="Bash health gate for VS Code Remote hosts. Catches the memory, load and extension pressure behind Codex's renderer_ready_timeout. MIT, experimental.">
+<link rel="canonical" href="https://mhjoy99.github.io/codex-vscode-health/">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="author" content="MHJoy99">
+<meta name="theme-color" content="#f4faf8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#050b0f" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="site.css">
+<meta name="keywords" content="codex renderer_ready_timeout, Codex VS Code extension, VS Code Remote health check, Codex sidebar could not start its user interface, extensionHost memory, vscode-server">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="codex-vscode-health">
+<meta property="og:title" content="codex-vscode-health: Fix Codex renderer_ready_timeout">
+<meta property="og:description" content="Bash health gate for VS Code Remote hosts. Catches the memory, load and extension pressure behind Codex's renderer_ready_timeout. MIT, experimental.">
+<meta property="og:url" content="https://mhjoy99.github.io/codex-vscode-health/">
+<meta property="og:image" content="https://mhjoy99.github.io/codex-vscode-health/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Terminal running vscode-health.sh with green checks and a heartbeat line, titled codex-vscode-health">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="codex-vscode-health: Fix Codex renderer_ready_timeout">
+<meta name="twitter:description" content="Bash health gate for VS Code Remote hosts. Catches the memory, load and extension pressure behind Codex's renderer_ready_timeout. MIT, experimental.">
+<meta name="twitter:image" content="https://mhjoy99.github.io/codex-vscode-health/og-image.png">
+<meta name="twitter:image:alt" content="Terminal running vscode-health.sh with green checks and a heartbeat line, titled codex-vscode-health">
+<script>document.documentElement.className+=" js"</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "@id": "https://mhjoy99.github.io/codex-vscode-health/#app",
+  "name": "codex-vscode-health",
+  "url": "https://mhjoy99.github.io/codex-vscode-health/",
+  "description": "Bash health gate for VS Code Remote hosts. Catches the memory, load and extension pressure behind Codex's renderer_ready_timeout. MIT, experimental.",
+  "applicationCategory": "DeveloperApplication",
+  "applicationSubCategory": "VS Code Remote health check",
+  "operatingSystem": "Linux",
+  "softwareRequirements": "bash, coreutils, procps (sqlite3 for the optional VACUUM)",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "license": "https://opensource.org/licenses/MIT",
+  "isAccessibleForFree": true,
+  "codeRepository": "https://github.com/MHJoy99/codex-vscode-health",
+  "downloadUrl": "https://github.com/MHJoy99/codex-vscode-health",
+  "installUrl": "https://github.com/MHJoy99/codex-vscode-health#quickstart",
+  "image": "https://mhjoy99.github.io/codex-vscode-health/og-image.png",
+  "featureList": [
+    "Memory, swap, load and disk checks against thresholds tuned from a real incident",
+    "Duplicate kilo serve and extensionHost detection",
+    "~/.codex size and stale rollout detection",
+    "Codex extension version drift and AI extension pile-up checks",
+    "Safe --fix limited to duplicate kilo serve, old logs and a guarded sqlite VACUUM",
+    "Exit codes 0 healthy, 1 warning, 2 critical"
+  ],
+  "author": {
+    "@type": "Person",
+    "name": "MHJoy99",
+    "url": "https://github.com/MHJoy99"
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "@id": "https://mhjoy99.github.io/codex-vscode-health/#faq",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is renderer_ready_timeout in the Codex VS Code extension?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It is the reason string logged when the Codex sidebar webview does not signal ready inside a fixed 30 second budget: [CodexWebviewProvider] Webview renderer did not become ready after 30000ms reason=renderer_ready_timeout. In the documented incident the backend was fine, with codex app-server: Initialize received id=1 in the server log, so the failure was in the webview handshake, not the app-server protocol."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What causes renderer_ready_timeout on a VS Code Remote host?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "In the one incident this repo documents (2026-09-16), server-side memory and CPU pressure delayed extension-host activation past the 30 second budget: load 7.2 on 6 vCPU, about 1.8G memory available, 3.6G swap in use, duplicate extensionHost and kilo serve processes, a 459M ~/.codex and several AI extensions. DIAGNOSIS.md ranks resource starvation first, then extension-host contention, bloat, version drift and renderer throttling."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I run the health check?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Clone the repo, make the script executable and run it: bin/vscode-health.sh. It is read-only by default. The exit code is 0 for healthy, 1 for warning and 2 for critical."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What does --fix change? Is it safe?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Only three things: it kills older duplicate kilo serve --port 0 processes (keeping the newest), prunes ~/.vscode-server/data/logs/20* older than 14 days, and takes a backup then runs VACUUM on ~/.codex/logs_2.sqlite, but only when app-server is stopped. It never touches php-fpm, mysql, nginx, reverb, queue workers, prod htdocs, the newest kilo serve, extensionHost or Codex session rows."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I run it from cron?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, in check-only mode. The prevention guide suggests */15 * * * * /root/codex-vscode-health/bin/vscode-health.sh >> ~/.codex/health.log 2>&1 and says never to run --fix unattended."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does it fix the problem on my Windows machine?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Not directly. The renderer runs on the client, not the server. The script fixes and reports server-side pressure; on a critical result it prints client-side steps (reload with extensions disabled, update Codex and match local and remote VS Code versions, clear %APPDATA%\\Code\\Cache and GPUCache, try --disable-gpu). The runbook covers the same steps."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does the Codex CLI still work when the sidebar fails?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Running codex in a terminal keeps working when the webview does not, so it is the fallback while you triage."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What does it need, and is it production-ready?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It is plain bash with no dependencies beyond coreutils and procps; the optional VACUUM path uses sqlite3. The project is labelled experimental: the shellcheck badge is still TODO and every threshold is tuned from a single incident on a 6 vCPU, 7.8G host, so adjust them for your machine and read DIAGNOSIS.md before changing them."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I report a new renderer_ready_timeout case?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Open a GitHub issue with the script output, free -m and the Codex extension version. Scrub Codex.log first and attach only a slice around the signature; never paste tokens or ~/.codex/auth.json."
+      }
+    }
+  ]
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "MHJoy99",
+      "item": "https://github.com/MHJoy99"
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "name": "codex-vscode-health",
+      "item": "https://mhjoy99.github.io/codex-vscode-health/"
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="codex-vscode-health home"><svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#34d399"/><stop offset="1" stop-color="#38bdf8"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="#07131a"/><path d="M6 34H18L24 18L32 48L39 26L43 34H58" fill="none" stroke="url(#lg)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>codex-vscode-health</span></a>
+    <nav aria-label="Sections"><ul>
+      <li><a href="#symptom">Symptom</a></li>
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#checks">Checks</a></li>
+      <li><a href="#safe">Safety</a></li>
+      <li><a href="#quickstart">Quick start</a></li>
+      <li><a href="#faq">FAQ</a></li>
+    </ul></nav>
+    <a class="btn sm gh" href="https://github.com/MHJoy99/codex-vscode-health" rel="noopener"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
+  </div>
+</header>
+
+<main id="main">
+<div class="hero" id="top">
+  <svg class="bgecg" viewBox="0 0 1200 90" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="ecg-g" x1="0" x2="1"><stop offset="0" stop-color="#34d399" stop-opacity="0"/><stop offset=".3" stop-color="#34d399"/><stop offset=".75" stop-color="#38bdf8"/><stop offset="1" stop-color="#38bdf8" stop-opacity="0"/></linearGradient></defs><path class="ecgp" pathLength="100" d="M0 55H210L225 55L240 20L262 80L282 35L296 55H560L575 55L590 20L612 80L632 35L646 55H900L915 55L930 20L952 80L972 35L986 55H1200"/></svg>
+  <div class="wrap hgrid">
+    <div>
+      <div class="pills" aria-label="Project status">
+        <span class="pill warn">status: experimental</span>
+        <span class="pill">shell: bash</span>
+        <span class="pill ok">license: MIT</span>
+      </div>
+      <h1><span class="nm">codex-vscode-health</span><span class="sb">Stop the Codex sidebar from hitting <code>renderer_ready_timeout</code></span></h1>
+      <p class="lead"><strong>A health gate for the Codex VS Code extension on remote hosts.</strong> One bash script checks the memory, load and extension pile-up that starves the 30 second webview budget, then tells you what to fix.</p>
+      <div class="cta">
+        <a class="btn pri" href="https://github.com/MHJoy99/codex-vscode-health" rel="noopener"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>Get it on GitHub</a>
+        <a class="btn" href="https://github.com/MHJoy99/codex-vscode-health/tree/main/docs" rel="noopener">Read the docs</a>
+      </div>
+      <div class="code one"><pre><code>git clone https://github.com/MHJoy99/codex-vscode-health.git</code></pre><button class="copy" type="button" data-copy="git clone https://github.com/MHJoy99/codex-vscode-health.git">Copy</button></div>
+      <p class="hint">Not affiliated with OpenAI or Microsoft. The terminal shows an illustrative healthy run in the real output format of <code>bin/vscode-health.sh</code>.</p>
+    </div>
+
+    <div class="term" role="img" aria-label="Animated terminal: bin/vscode-health.sh runs its checks, each turns green, the result is HEALTHY with exit 0, a heartbeat line runs, and the Codex sidebar loads instead of hitting renderer_ready_timeout.">
+      <div class="tbar"><i></i><i></i><i></i><span>user@remote-host: ~/codex-vscode-health</span><em>illustrative run</em></div>
+      <div class="tbody" aria-hidden="true">
+<div class="tl cmd a" style="--an:ln0"><span class="p">$ </span><span class="typed" id="typed">bin/vscode-health.sh; echo "exit=$?"</span><span class="cur"></span></div>
+<div class="tl info a" style="--an:ln1">▶ VS Code remote health check (NPROC=6)</div>
+<div class="tl info a" style="--an:ln2">▶ Memory avail=5120M swap_used=310M</div>
+<div class="tl ok a" style="--an:ln3">✔ Memory avail 5120M OK</div>
+<div class="tl info a" style="--an:ln4">▶ Load1=0.84 (warn&gt;6 crit&gt;9)</div>
+<div class="tl ok a" style="--an:ln5">✔ Load 0.84 OK</div>
+<div class="tl info a" style="--an:ln6">▶ Disk / at 41% (warn&gt;80% crit&gt;90%)</div>
+<div class="tl ok a" style="--an:ln7">✔ Disk 41% OK</div>
+<div class="tl info a" style="--an:ln8">▶ kilo serve processes: 1</div>
+<div class="tl ok a" style="--an:ln9">✔ Single kilo serve OK (2417)</div>
+<div class="tl info a" style="--an:ln10">▶ extensionHost processes: 1</div>
+<div class="tl ok a" style="--an:ln11">✔ extensionHost count OK</div>
+<div class="tl info a" style="--an:ln12">▶ ~/.codex total=212M logs_2.sqlite=48M (warn total&gt;400M / sqlite&gt;100M)</div>
+<div class="tl ok a" style="--an:ln13">✔ Codex state size OK</div>
+<div class="tl info a" style="--an:ln14">▶ Codex extension installs: 1</div>
+<div class="tl ok a" style="--an:ln15">✔ Single Codex install OK (…/openai.chatgpt-&lt;version&gt;)</div>
+<div class="tl info a" style="--an:ln16">▶ AI extensions installed: 2 / 5 tracked</div>
+<div class="tl ok a" style="--an:ln17">✔ AI extension count OK</div>
+<div class="tl info a" style="--an:ln18">▶ VS Code log sets older than 14d: 0</div>
+<div class="tl ok a" style="--an:ln19">✔ Log retention OK</div>
+<div class="tl sep a" style="--an:ln20">---</div>
+<div class="tl res a" style="--an:ln21">✔ RESULT: HEALTHY — Codex renderer budget looks safe.</div>
+<div class="tl xt a" style="--an:ln22">exit=0</div>
+
+      </div>
+      <div class="tfoot ftanim" aria-hidden="true">
+        <div class="hb">
+          <h4><span>host heartbeat</span><b>steady</b></h4>
+          <svg viewBox="0 0 200 46" preserveAspectRatio="none"><path class="ghost" d="M0 24H30L36 24L41 8L48 40L54 14L58 24H120L126 24L131 8L138 40L144 14L148 24H200"/><path class="ecgp" pathLength="100" d="M0 24H30L36 24L41 8L48 40L54 14L58 24H120L126 24L131 8L138 40L144 14L148 24H200"/></svg>
+        </div>
+        <div class="sbx">
+          <h4><span>Codex sidebar</span></h4>
+          <div class="sbl"><div class="row"><span class="spin"></span>Starting Codex&hellip;</div><div class="bud"><i></i></div><div class="bl"><span>renderer budget</span><span>30 s</span></div></div>
+          <div class="sbr"><div class="row"><span class="tick"><svg viewBox="0 0 12 12"><path d="M2.5 6.5l2.5 2.5 4.5-5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Sidebar ready</div><div class="sub">codex app-server: Initialize received id=1</div><div class="bl"><span>no renderer_ready_timeout</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<section id="symptom">
+  <div class="wrap">
+    <p class="eyebrow rv">The failure</p>
+    <h2 class="rv">The sidebar dies. The backend is fine.</h2>
+    <p class="sec-lead rv">Codex shows &ldquo;could not start its user interface&rdquo; on a VS Code Remote host, yet <code>codex app-server</code> answered its handshake. That mismatch is the signature this repo is built around.</p>
+    <div class="split">
+      <div class="logbox bad rv"><h3><i></i>Client log: webview dead</h3><pre><span class="dim">[CodexWebviewProvider]</span> Webview renderer did not become ready after <span class="hl-r">30000ms</span>
+reason=<span class="hl-r">renderer_ready_timeout</span></pre><p class="note">The renderer (Electron, on your local machine) never signalled ready within 30 s.</p></div>
+      <div class="logbox good rv" style="--d:.1s"><h3><i></i>Server log: backend healthy</h3><pre><span class="dim">codex app-server:</span> <span class="hl-g">Initialize received id=1</span></pre><p class="note">Backend IPC works, and there is no webview deadline on this side. Investigate host pressure and client extension state, not the app-server protocol.</p></div>
+    </div>
+    <div class="facts">
+      <div class="card fact rv"><b>elapsedMs=30001</b><span>A hard 30 second readiness timeout that does not stretch under load.</span></div>
+      <div class="card fact rv" style="--d:.08s"><b>receivedWebviewMessage=true</b><span>The webview ran some JS and posted a message, but never sent <code>ready</code>. A slow main thread, not a missing bundle.</span></div>
+      <div class="card fact rv" style="--d:.16s"><b>codex in a terminal</b><span>The CLI fallback keeps working while the webview does not.</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="how" class="alt">
+  <div class="wrap">
+    <p class="eyebrow rv">How it works</p>
+    <h2 class="rv">Catch the pressure before the 30 seconds run out.</h2>
+    <p class="sec-lead rv">Server-side memory and load pressure delays extension-host activation until the fixed webview budget expires. The gate reads those signals first and warns you while the sidebar still works.</p>
+    <div class="dia rv">
+      <svg class="horiz" viewBox="0 0 960 372" role="img" aria-labelledby="dt1 dd1">
+        <title id="dt1">From host pressure to renderer_ready_timeout, and where the health gate sits</title>
+        <desc id="dd1">The script bin/vscode-health.sh reads host pressure. Unchecked, pressure starves the extension host, which makes the webview miss its 30 second budget and log renderer_ready_timeout. The codex app-server backend stays healthy throughout.</desc>
+        <rect class="nd s" x="40" y="14" width="340" height="92" rx="14"/>
+        <text class="t1 m" x="60" y="48">bin/vscode-health.sh</text>
+        <text class="t2 mute" x="60" y="72">reads memory, load, disk, extensions</text>
+        <text class="t2 m" x="60" y="94" style="fill:var(--g)">exit 0 healthy / 1 warn / 2 critical</text>
+        <path class="fl s" d="M190 106V176"/><path class="ah s" d="M181 172H199L190 186Z"/>
+        <text class="t2 mute" x="206" y="150">warns here, before the budget runs out</text>
+
+        <rect class="nd a" x="40" y="190" width="250" height="100" rx="14"/>
+        <text class="t1" x="60" y="224">Host pressure</text>
+        <text class="t2 mute" x="60" y="248">load, memory, swap,</text><text class="t2 mute" x="60" y="268">duplicate helpers, AI extensions</text>
+        <path class="fl a" d="M290 240H350"/><path class="ah" d="M347 231L361 240L347 249Z"/>
+
+        <rect class="nd a" x="364" y="190" width="250" height="100" rx="14"/>
+        <text class="t1" x="384" y="224">extensionHost starved</text>
+        <text class="t2 mute" x="384" y="248">activation slips past</text><text class="t2 mute" x="384" y="268">the webview budget</text>
+        <path class="fl a" d="M614 240H674"/><path class="ah" d="M671 231L685 240L671 249Z"/>
+
+        <rect class="nd r" x="688" y="190" width="232" height="100" rx="14"/>
+        <text class="t1" x="708" y="224">Webview not ready</text>
+        <text class="t2 m" x="708" y="248" style="fill:var(--red)">renderer_ready_timeout</text><text class="t2 mute" x="708" y="268">after the 30 s budget</text>
+
+        <rect class="nd g" x="364" y="316" width="556" height="46" rx="12"/>
+        <circle class="pl" cx="388" cy="339" r="6" style="fill:var(--g2)"/>
+        <text class="t2" x="406" y="344"><tspan style="font-weight:700">codex app-server healthy</tspan><tspan class="m mute" dx="10">Initialize received id=1</tspan></text>
+      </svg>
+
+      <svg class="vert" viewBox="0 0 360 690" role="img" aria-labelledby="dt2 dd2">
+        <title id="dt2">From host pressure to renderer_ready_timeout, and where the health gate sits</title>
+        <desc id="dd2">The script bin/vscode-health.sh reads host pressure. Unchecked, pressure starves the extension host, which makes the webview miss its 30 second budget and log renderer_ready_timeout. The codex app-server backend stays healthy throughout.</desc>
+        <rect class="nd s" x="20" y="10" width="320" height="92" rx="14"/>
+        <text class="t1 m" x="38" y="44">bin/vscode-health.sh</text>
+        <text class="t2 mute" x="38" y="68">reads memory, load, disk, extensions</text>
+        <text class="t2 m" x="38" y="90" style="fill:var(--g)">exit 0 healthy / 1 warn / 2 critical</text>
+        <path class="fl s" d="M180 102V148"/><path class="ah s" d="M171 144H189L180 158Z"/>
+
+        <rect class="nd a" x="20" y="162" width="320" height="86" rx="14"/>
+        <text class="t1" x="38" y="196">Host pressure</text>
+        <text class="t2 mute" x="38" y="220">load, memory, swap, helpers, AI extensions</text>
+        <path class="fl a" d="M180 248V286"/><path class="ah" d="M171 282H189L180 296Z"/>
+
+        <rect class="nd a" x="20" y="300" width="320" height="86" rx="14"/>
+        <text class="t1" x="38" y="334">extensionHost starved</text>
+        <text class="t2 mute" x="38" y="358">activation slips past the webview budget</text>
+        <path class="fl a" d="M180 386V424"/><path class="ah" d="M171 420H189L180 434Z"/>
+
+        <rect class="nd r" x="20" y="438" width="320" height="86" rx="14"/>
+        <text class="t1" x="38" y="472">Webview not ready after 30 s</text>
+        <text class="t2 m" x="38" y="496" style="fill:var(--red)">renderer_ready_timeout</text>
+
+        <rect class="nd g" x="20" y="560" width="320" height="86" rx="14"/>
+        <circle class="pl" cx="44" cy="591" r="6" style="fill:var(--g2)"/>
+        <text class="t1" x="60" y="596">codex app-server healthy</text>
+        <text class="t2 m mute" x="38" y="624">Initialize received id=1</text>
+      </svg>
+      <div class="legend"><span style="--c:var(--s2)">Health gate reads the host</span><span style="--c:var(--amber)">Pressure builds</span><span style="--c:var(--red)">Failure signature</span><span style="--c:var(--g2)">Backend unaffected</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="checks">
+  <div class="wrap">
+    <p class="eyebrow rv">What it checks</p>
+    <h2 class="rv">Nine checks, thresholds tuned from a real incident.</h2>
+    <p class="sec-lead rv">Each check prints a cyan <code>&#9654;</code> line with the measured value, then a green <code>&#10004;</code>, yellow <code>&#9888;</code> or red <code>&#10006;</code> verdict. Warnings and criticals are counted into the exit code.</p>
+    <div class="cgrid">
+<article class="card chk rv" style="--d:0s"><div class="hd"><span class="n">1</span><h3>Memory and swap</h3></div><p>Reads <code>free -m</code>. Low available memory is the first thing that starves the extension host.</p><div class="thr"><span class="w">warn avail &lt; 2500M</span><span class="c">crit avail &lt; 1500M</span><span class="w">warn swap used &gt; 3000M</span></div></article>
+<article class="card chk rv" style="--d:0.08s"><div class="hd"><span class="n">2</span><h3>CPU load</h3></div><p>Compares 1-minute load from <code>/proc/loadavg</code> to the core count.</p><div class="thr"><span class="w">warn &gt; nproc</span><span class="c">crit &gt; 1.5 x nproc</span></div></article>
+<article class="card chk rv" style="--d:0.16s"><div class="hd"><span class="n">3</span><h3>Disk /</h3></div><p>Webview assets and sqlite need headroom. The failure host sat at 84%.</p><div class="thr"><span class="w">warn &ge; 80%</span><span class="c">crit &ge; 90%</span></div></article>
+<article class="card chk rv" style="--d:0s"><div class="hd"><span class="n">4</span><h3>Duplicate kilo serve</h3></div><p>Counts <code>kilo serve --port 0</code> processes leaked after reloads.</p><div class="thr"><span class="w">warn &gt; 1</span><span class="i">--fix kills older</span></div></article>
+<article class="card chk rv" style="--d:0.08s"><div class="hd"><span class="n">5</span><h3>extensionHost count</h3></div><p>More than one usually means a reload loop or a leaked window. It tells you to reload the window, never to <code>pkill</code>.</p><div class="thr"><span class="w">warn &gt; 1</span></div></article>
+<article class="card chk rv" style="--d:0.16s"><div class="hd"><span class="n">6</span><h3>~/.codex bloat</h3></div><p>Total size and <code>logs_2.sqlite</code>, plus a scan of <code>Codex.log</code> for <code>stale_rollout_path_retained</code>.</p><div class="thr"><span class="w">warn total &gt; 400M</span><span class="w">warn sqlite &gt; 100M</span></div></article>
+<article class="card chk rv" style="--d:0s"><div class="hd"><span class="n">7</span><h3>Codex extension installs</h3></div><p>Looks for <code>openai.chatgpt-*</code> under <code>~/.vscode-server/extensions</code>. Exactly one is healthy; leftovers cause version drift.</p><div class="thr"><span class="w">warn if 0 or &gt; 1</span></div></article>
+<article class="card chk rv" style="--d:0.08s"><div class="hd"><span class="n">8</span><h3>AI extension pile-up</h3></div><p>Tracks five AI extensions that all activate on startup and compete for the renderer budget.</p><div class="thr"><span class="w">warn &gt; 3 of 5 tracked</span></div></article>
+<article class="card chk rv" style="--d:0.16s"><div class="hd"><span class="n">9</span><h3>Old VS Code logs</h3></div><p>Log sets older than 14 days in <code>~/.vscode-server/data/logs</code>. Safe to prune, never touches sessions.</p><div class="thr"><span class="w">warn &gt; 14 days</span><span class="i">--fix prunes</span></div></article>
+    </div>
+    <div class="gauges">
+      <h3 class="rv">The incident, against the thresholds</h3>
+      <p class="rv">Observed on 2026-09-16 at failure time (6 vCPU, 7.8G RAM host). Every signal had already crossed its warning line. Thresholds are tuned from this one host, so adjust them for yours.</p>
+      <div class="gg">
+<div class="card ga rv" style="--d:0s"><div class="gt"><span>Memory available</span><b>1.8G</b></div><div class="bar" style="background:linear-gradient(90deg,var(--bar-r) 0.0% 37.5%,var(--bar-a) 37.5% 62.5%,var(--g2) 62.5% 100.0%);--m:calc(45.0% - 2px)"><i class="mk"></i></div><div class="gs"><span>0</span><span>warn &lt; 2500M, crit &lt; 1500M</span><span>4000M</span></div></div>
+<div class="card ga rv" style="--d:0.08s"><div class="gt"><span>Load (6 vCPU)</span><b>7.2</b></div><div class="bar" style="background:linear-gradient(90deg,var(--g2) 0.0% 50.0%,var(--bar-a) 50.0% 75.0%,var(--bar-r) 75.0% 100.0%);--m:calc(60.0% - 2px)"><i class="mk"></i></div><div class="gs"><span>0</span><span>warn &gt; 6, crit &gt; 9</span><span>12</span></div></div>
+<div class="card ga rv" style="--d:0.16s"><div class="gt"><span>Swap used</span><b>3.6G</b></div><div class="bar" style="background:linear-gradient(90deg,var(--g2) 0.0% 60.0%,var(--bar-a) 60.0% 100.0%);--m:calc(72.0% - 2px)"><i class="mk"></i></div><div class="gs"><span>0</span><span>warn &gt; 3000M</span><span>5000M</span></div></div>
+<div class="card ga rv" style="--d:0s"><div class="gt"><span>Disk /</span><b>84%</b></div><div class="bar" style="background:linear-gradient(90deg,var(--g2) 0.0% 80.0%,var(--bar-a) 80.0% 90.0%,var(--bar-r) 90.0% 100.0%);--m:calc(84.0% - 2px)"><i class="mk"></i></div><div class="gs"><span>0</span><span>warn &ge; 80%, crit &ge; 90%</span><span>100%</span></div></div>
+<div class="card ga rv" style="--d:0.08s"><div class="gt"><span>~/.codex total</span><b>459M</b></div><div class="bar" style="background:linear-gradient(90deg,var(--g2) 0.0% 66.7%,var(--bar-a) 66.7% 100.0%);--m:calc(76.5% - 2px)"><i class="mk"></i></div><div class="gs"><span>0</span><span>warn &gt; 400M</span><span>600M</span></div></div>
+<div class="card ga rv" style="--d:0.16s"><div class="gt"><span>logs_2.sqlite</span><b>136M</b></div><div class="bar" style="background:linear-gradient(90deg,var(--g2) 0.0% 50.0%,var(--bar-a) 50.0% 100.0%);--m:calc(68.0% - 2px)"><i class="mk"></i></div><div class="gs"><span>0</span><span>warn &gt; 100M</span><span>200M</span></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="safe" class="alt">
+  <div class="wrap">
+    <p class="eyebrow rv">Safe by design</p>
+    <h2 class="rv">Read-only by default. <code>--fix</code> does three things.</h2>
+    <p class="sec-lead rv">Safe to run over SSH or from cron in check-only mode. The script never takes down the shared box your Codex session lives on.</p>
+    <div class="safe">
+      <div class="exits">
+        <div class="card ex o rv"><span class="cd">0</span><div><h3>Healthy</h3><p><code>RESULT: HEALTHY</code> &mdash; renderer budget looks safe.</p></div></div>
+        <div class="card ex w rv" style="--d:.08s"><span class="cd">1</span><div><h3>Warning</h3><p>Healthy enough now. Run with <code>--fix</code> and keep AI extensions to 1&ndash;2 per window.</p></div></div>
+        <div class="card ex x rv" style="--d:.16s"><span class="cd">2</span><div><h3>Critical</h3><p>Free RAM, reload the window. Prints client-side recovery steps too.</p></div></div>
+      </div>
+      <div>
+        <div class="card safecard rv">
+          <h3>What <code>--fix</code> does</h3>
+          <ul class="dn y">
+            <li><span>Kills <b>older duplicate</b> <code>kilo serve --port 0</code>, keeps the newest.</span></li>
+            <li><span>Prunes <code>~/.vscode-server/data/logs/20*</code> older than <b>14 days</b>.</span></li>
+            <li><span>Backs up, then runs <code>VACUUM</code> on <code>~/.codex/logs_2.sqlite</code>, <b>only when app-server is stopped</b>.</span></li>
+          </ul>
+        </div>
+        <div class="card safecard rv" style="--d:.1s">
+          <h3>What it never touches</h3>
+          <ul class="dn n">
+            <li><span><code>php-fpm</code>, <code>mysql</code>, <code>nginx</code>, reverb, queue workers, prod htdocs.</span></li>
+            <li><span>The newest <code>kilo serve</code> and any <code>extensionHost</code> (killing it would drop your SSH).</span></li>
+            <li><span>Codex session rows or files in <code>~/.codex</code>. No <code>rm -rf</code>.</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="quickstart">
+  <div class="wrap">
+    <p class="eyebrow rv">Quick start</p>
+    <h2 class="rv">Clone it, run it, read the exit code.</h2>
+    <p class="sec-lead rv">Plain bash on the remote host. No dependencies beyond coreutils and procps.</p>
+    <div class="start">
+      <div class="rv">
+        <div class="code"><button class="copy" type="button">Copy</button><pre><code><span class="gn">git</span> clone https://github.com/MHJoy99/codex-vscode-health.git
+<span class="gn">cd</span> codex-vscode-health
+<span class="gn">chmod</span> +x bin/vscode-health.sh
+
+<span class="c"># read-only check, safe in cron/SSH</span>
+bin/vscode-health.sh
+
+<span class="c"># check + safe fixes only</span>
+bin/vscode-health.sh --fix</code></pre></div>
+        <div class="code"><button class="copy" type="button">Copy</button><pre><code><span class="c"># check-only from cron, every 15 minutes (never --fix unattended)</span>
+*/15 * * * * /root/codex-vscode-health/bin/vscode-health.sh &gt;&gt; ~/.codex/health.log 2&gt;&amp;1</code></pre></div>
+        <p class="fmt">Exit codes: <code>0</code> healthy, <code>1</code> warning, <code>2</code> critical.</p>
+      </div>
+      <ol class="steps rv" style="--d:.1s">
+        <li><span class="nb">1</span><span><b>Run the check.</b> It reads <code>~/.vscode-server</code> and <code>~/.codex</code> on the host the extension runs on.</span></li>
+        <li><span class="nb">2</span><span><b>Fix the warnings.</b> Use <code>--fix</code> for the safe three, and drop to 1&ndash;2 AI extensions per window.</span></li>
+        <li><span class="nb">3</span><span><b>Reload the window.</b> <code>Developer: Reload Window</code>, then retry with a single AI extension.</span></li>
+        <li><span class="nb">4</span><span><b>Still failing?</b> Follow the runbook below. If the server is green, the problem is on the client.</span></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<section id="runbook" class="alt">
+  <div class="wrap">
+    <p class="eyebrow rv">Runbook</p>
+    <h2 class="rv">Seven steps. Stop at the first fix.</h2>
+    <p class="sec-lead rv">Condensed from <a href="https://github.com/MHJoy99/codex-vscode-health/blob/main/docs/RUNBOOK.md" rel="noopener">docs/RUNBOOK.md</a>. Each step ends with the signal that tells you it worked.</p>
+    <ol class="rb">
+<li class="card rv"><span class="nb">1</span><div><h3>Confirm the backend is healthy</h3><p>Look for <code>Initialize received id=1</code> and <code>renderer_ready_timeout</code> in <code>Codex.log</code>. Both present means this runbook applies.</p></div><div class="gr"><small>Green</small>Initialize received id=1</div></li>
+<li class="card rv"><span class="nb">2</span><div><h3>Run the read-only check</h3><p><code>bin/vscode-health.sh; echo "exit=$?"</code>. If disk is at 90% or more, stop and free space before any update.</p></div><div class="gr"><small>Green</small>RESULT: HEALTHY, exit=0</div></li>
+<li class="card rv"><span class="nb">3</span><div><h3>Apply the safe auto-fix</h3><p><code>bin/vscode-health.sh --fix</code>. Removes older duplicate <code>kilo serve</code> and logs older than 14 days. If only one kilo is running, do not kill it.</p></div><div class="gr"><small>Green</small>1x kilo, 0 old logs</div></li>
+<li class="card rv"><span class="nb">4</span><div><h3>Reload and test one extension</h3><p><code>Developer: Reload Window</code>, then <code>Reload With Extensions Disabled</code> and enable only Codex. Do not pkill the extension host.</p></div><div class="gr"><small>Green</small>Sidebar loads in &lt; 30s</div></li>
+<li class="card rv"><span class="nb">5</span><div><h3>Reinstall on version drift</h3><p>More than one (or zero) <code>openai.chatgpt-*</code> installs, or a version mismatch: uninstall, reload, install one current version. Match client and server <code>code --version</code>.</p></div><div class="gr"><small>Green</small>installs: 1</div></li>
+<li class="card rv"><span class="nb">6</span><div><h3>VACUUM, only while stopped</h3><p>Confirm app-server is stopped, back up <code>logs_2.sqlite</code>, then <code>VACUUM</code>. If it is running, close the Codex panel and retry.</p></div><div class="gr"><small>Green</small>sqlite &lt; 100M</div></li>
+<li class="card rv"><span class="nb">7</span><div><h3>Clear the Windows client cache</h3><p>With VS Code closed, remove <code>%APPDATA%\Code\Cache</code> and <code>GPUCache</code>, then try <code>code --disable-gpu</code>. Do not delete all of <code>%APPDATA%\Code</code>.</p></div><div class="gr"><small>Green</small>Sidebar renders</div></li>
+    </ol>
+    <div class="warnbox rv">
+      <h3>Safety: read first</h3>
+      <ul>
+        <li>Never kill or touch php-fpm, mysql, nginx, Reverb, queue workers or prod htdocs.</li>
+        <li>Never <code>pkill -f extensionHost</code> and never kill the newest <code>kilo serve</code>.</li>
+        <li>Never delete <code>~/.codex</code> files or sqlite rows. VACUUM only with a backup, only while stopped.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="faq">
+  <div class="wrap">
+    <p class="eyebrow rv">FAQ</p>
+    <h2 class="rv">Questions, answered from the repo.</h2>
+    <div class="faq">
+<details class="rv" open><summary>What is renderer_ready_timeout in the Codex VS Code extension?</summary><div class="a"><p>It is the reason string logged when the Codex sidebar webview does not signal ready inside a fixed 30 second budget: <code>[CodexWebviewProvider] Webview renderer did not become ready after 30000ms reason=renderer_ready_timeout</code>. In the documented incident the backend was fine, with <code>codex app-server: Initialize received id=1</code> in the server log, so the failure was in the webview handshake, not the app-server protocol.</p></div></details>
+<details class="rv"><summary>What causes renderer_ready_timeout on a VS Code Remote host?</summary><div class="a"><p>In the one incident this repo documents (2026-09-16), server-side memory and CPU pressure delayed extension-host activation past the 30 second budget: load 7.2 on 6 vCPU, about 1.8G memory available, 3.6G swap in use, duplicate extensionHost and <code>kilo serve</code> processes, a 459M <code>~/.codex</code> and several AI extensions. DIAGNOSIS.md ranks resource starvation first, then extension-host contention, bloat, version drift and renderer throttling.</p></div></details>
+<details class="rv"><summary>How do I run the health check?</summary><div class="a"><p>Clone the repo, make the script executable and run it: <code>bin/vscode-health.sh</code>. It is read-only by default. The exit code is 0 for healthy, 1 for warning and 2 for critical.</p></div></details>
+<details class="rv"><summary>What does --fix change? Is it safe?</summary><div class="a"><p>Only three things: it kills older duplicate <code>kilo serve --port 0</code> processes (keeping the newest), prunes <code>~/.vscode-server/data/logs/20*</code> older than 14 days, and takes a backup then runs <code>VACUUM</code> on <code>~/.codex/logs_2.sqlite</code>, but only when app-server is stopped. It never touches php-fpm, mysql, nginx, reverb, queue workers, prod htdocs, the newest kilo serve, extensionHost or Codex session rows.</p></div></details>
+<details class="rv"><summary>Can I run it from cron?</summary><div class="a"><p>Yes, in check-only mode. The prevention guide suggests <code>*/15 * * * * /root/codex-vscode-health/bin/vscode-health.sh &gt;&gt; ~/.codex/health.log 2&gt;&amp;1</code> and says never to run <code>--fix</code> unattended.</p></div></details>
+<details class="rv"><summary>Does it fix the problem on my Windows machine?</summary><div class="a"><p>Not directly. The renderer runs on the client, not the server. The script fixes and reports server-side pressure; on a critical result it prints client-side steps (reload with extensions disabled, update Codex and match local and remote VS Code versions, clear <code>%APPDATA%\Code\Cache</code> and GPUCache, try <code>--disable-gpu</code>). The runbook covers the same steps.</p></div></details>
+<details class="rv"><summary>Does the Codex CLI still work when the sidebar fails?</summary><div class="a"><p>Yes. Running <code>codex</code> in a terminal keeps working when the webview does not, so it is the fallback while you triage.</p></div></details>
+<details class="rv"><summary>What does it need, and is it production-ready?</summary><div class="a"><p>It is plain bash with no dependencies beyond coreutils and procps; the optional VACUUM path uses <code>sqlite3</code>. The project is labelled experimental: the shellcheck badge is still TODO and every threshold is tuned from a single incident on a 6 vCPU, 7.8G host, so adjust them for your machine and read DIAGNOSIS.md before changing them.</p></div></details>
+<details class="rv"><summary>How do I report a new renderer_ready_timeout case?</summary><div class="a"><p>Open a GitHub issue with the script output, <code>free -m</code> and the Codex extension version. Scrub <code>Codex.log</code> first and attach only a slice around the signature; never paste tokens or <code>~/.codex/auth.json</code>.</p></div></details>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="more">
+  <div class="wrap">
+    <p class="eyebrow rv">More by MHJoy99</p>
+    <h2 class="rv">Other tools from the same bench.</h2>
+    <div class="more">
+<a class="card mc rv" href="https://mhjoy99.github.io/CCUsageX/"><b>CCUsageX</b><span>Claude Code usage dashboard: tokens, cost per prompt, cache savings.</span><i>Visit site &rarr;</i></a>
+<a class="card mc rv" href="https://mhjoy99.github.io/bdx-bench/"><b>bdx-bench</b><span>Local LLM benchmark with a leaderboard.</span><i>Visit site &rarr;</i></a>
+<a class="card mc rv" href="https://mhjoy99.github.io/joyvoice/"><b>joyvoice</b><span>Windows voice typing with Gemini.</span><i>Visit site &rarr;</i></a>
+<a class="card mc rv" href="https://mhjoy99.github.io/ZipStream-Hub/"><b>ZipStream-Hub</b><span>Stream video from remote ZIPs.</span><i>Visit site &rarr;</i></a>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="fr">
+      <div>
+        <p><strong style="color:var(--ink)">codex-vscode-health</strong> &middot; MIT licensed &middot; experimental</p>
+        <p>Built by <a href="https://github.com/MHJoy99" rel="noopener">MHJoy99</a></p>
+      </div>
+      <ul>
+        <li><a href="https://github.com/MHJoy99/codex-vscode-health" rel="noopener">GitHub</a></li>
+        <li><a href="https://github.com/MHJoy99/codex-vscode-health/issues" rel="noopener">Issues</a></li>
+        <li><a href="https://github.com/MHJoy99/codex-vscode-health/blob/main/LICENSE" rel="noopener">License</a></li>
+        <li><a href="https://github.com/MHJoy99/codex-vscode-health/blob/main/SECURITY.md" rel="noopener">Security</a></li>
+        <li><a href="llms.txt">llms.txt</a></li>
+      </ul>
+    </div>
+    <div class="na">
+      <p>Not affiliated with OpenAI or Microsoft. Codex, OpenAI, Visual Studio Code and VS Code are trademarks of their respective owners and are used here only to describe compatibility.</p>
+      <p>This website uses cookieless Cloudflare Web Analytics.</p>
+    </div>
+  </div>
+</footer>
+<script src="site.js" defer></script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token": "a2f7f3d589ae4c8688a646d54918b0e7"}'></script>
+</body>
+</html>

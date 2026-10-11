@@ -1,0 +1,24 @@
+# codex-vscode-health
+
+> codex-vscode-health is a free, open-source (MIT), experimental bash health gate for VS Code Remote hosts. It checks memory, swap, load, disk, duplicate helper processes, extensionHost count, ~/.codex size, Codex extension installs and AI extension pile-up, which are the server-side pressures behind the Codex VS Code extension failing with renderer_ready_timeout while the codex app-server backend is healthy. Run bin/vscode-health.sh (read-only) or bin/vscode-health.sh --fix (safe fixes only). Exit codes: 0 healthy, 1 warning, 2 critical.
+
+Not affiliated with OpenAI or Microsoft. Thresholds are tuned from a single documented incident on a 6 vCPU, 7.8G host, so treat them as a starting point.
+
+## Docs
+
+- [README](https://github.com/MHJoy99/codex-vscode-health#readme): TL;DR, quickstart, root-cause summary
+- [Diagnosis](https://github.com/MHJoy99/codex-vscode-health/blob/main/docs/DIAGNOSIS.md): incident evidence and causal chain
+- [Prevention](https://github.com/MHJoy99/codex-vscode-health/blob/main/docs/PREVENTION.md): thresholds, extension hygiene, cron guidance
+- [Runbook](https://github.com/MHJoy99/codex-vscode-health/blob/main/docs/RUNBOOK.md): step-by-step triage when the renderer times out
+- [Full plain-text description for LLMs](https://mhjoy99.github.io/codex-vscode-health/llms-full.txt): everything in one file
+
+## Project
+
+- [Project website](https://mhjoy99.github.io/codex-vscode-health/)
+- [Source code on GitHub](https://github.com/MHJoy99/codex-vscode-health)
+- [Issues](https://github.com/MHJoy99/codex-vscode-health/issues)
+
+## Optional
+
+- [Security notes](https://github.com/MHJoy99/codex-vscode-health/blob/main/SECURITY.md): what never to paste, how to scrub Codex.log
+- [Changelog](https://github.com/MHJoy99/codex-vscode-health/blob/main/CHANGELOG.md)

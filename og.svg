@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#06100f"/><stop offset="1" stop-color="#071a24"/></linearGradient>
+<linearGradient id="gr" x1="0" x2="1"><stop offset="0" stop-color="#34d399"/><stop offset="1" stop-color="#38bdf8"/></linearGradient>
+<radialGradient id="g1" cx=".15" cy=".1" r=".6"><stop offset="0" stop-color="#34d399" stop-opacity=".22"/><stop offset="1" stop-color="#34d399" stop-opacity="0"/></radialGradient>
+<radialGradient id="g2" cx=".95" cy=".85" r=".6"><stop offset="0" stop-color="#38bdf8" stop-opacity=".22"/><stop offset="1" stop-color="#38bdf8" stop-opacity="0"/></radialGradient>
+<pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0V48" fill="none" stroke="#14303a" stroke-width="1"/></pattern>
+</defs>
+<rect width="1200" height="630" fill="url(#bg)"/>
+<rect width="1200" height="630" fill="url(#grid)" opacity=".3"/>
+<rect width="1200" height="630" fill="url(#g1)"/><rect width="1200" height="630" fill="url(#g2)"/>
+<!-- logo -->
+<g transform="translate(70 70)"><rect width="72" height="72" rx="17" fill="#07131a" stroke="#1b3744"/><path d="M7 38H20L27 20L36 54L44 29L48 38H65" fill="none" stroke="url(#gr)" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></g>
+<text x="162" y="118" font-family="Consolas,'Cascadia Code',monospace" font-size="26" fill="#8fa9a2">MHJoy99 / health gate</text>
+<text x="70" y="262" font-family="Consolas,'Cascadia Code',monospace" font-weight="700" font-size="52" letter-spacing="-1.5" fill="url(#gr)">codex-vscode-health</text>
+<text x="70" y="330" font-family="'Segoe UI',system-ui,Arial,sans-serif" font-weight="700" font-size="40" fill="#e7f4f0">Stop the Codex sidebar hitting</text>
+<text x="70" y="382" font-family="Consolas,'Cascadia Code',monospace" font-weight="700" font-size="40" fill="#f87171">renderer_ready_timeout</text>
+<text x="70" y="450" font-family="'Segoe UI',system-ui,Arial,sans-serif" font-size="25" fill="#8fa9a2">A bash health gate for VS Code Remote hosts.</text>
+<g font-family="Consolas,monospace" font-size="21">
+<rect x="70" y="496" width="262" height="44" rx="22" fill="none" stroke="#2a4a55"/><text x="94" y="525" fill="#fbbf24">status: experimental</text>
+<rect x="348" y="496" width="104" height="44" rx="22" fill="none" stroke="#2a4a55"/><text x="372" y="525" fill="#8fa9a2">bash</text>
+<rect x="468" y="496" width="90" height="44" rx="22" fill="none" stroke="#2a4a55"/><text x="492" y="525" fill="#34d399">MIT</text>
+</g>
+<!-- terminal card -->
+<g transform="translate(690 118)">
+<rect width="440" height="394" rx="18" fill="#06111a" stroke="#1f4252" stroke-width="2"/>
+<path d="M0 18a18 18 0 0 1 18-18H422a18 18 0 0 1 18 18V46H0Z" fill="#0a1a25"/>
+<circle cx="26" cy="23" r="6" fill="#f87171"/><circle cx="46" cy="23" r="6" fill="#fbbf24"/><circle cx="66" cy="23" r="6" fill="#34d399"/>
+<g font-family="Consolas,'Cascadia Code',monospace" font-size="18">
+<text x="24" y="84" fill="#cfe6de"><tspan fill="#34d399">$ </tspan>bin/vscode-health.sh</text>
+<text x="24" y="118" fill="#34d399">✔ Memory avail 5120M OK</text>
+<text x="24" y="146" fill="#34d399">✔ Load 0.84 OK</text>
+<text x="24" y="174" fill="#34d399">✔ Disk 41% OK</text>
+<text x="24" y="202" fill="#34d399">✔ extensionHost count OK</text>
+<text x="24" y="230" fill="#34d399">✔ Single Codex install OK</text>
+<text x="24" y="258" fill="#34d399">✔ AI extension count OK</text>
+<text x="24" y="296" fill="#34d399" font-weight="700">✔ RESULT: HEALTHY</text>
+</g>
+<path d="M24 340H120L132 340L144 316L160 366L176 326L186 340H260L272 340L284 316L300 366L316 326L326 340H416" fill="none" stroke="url(#gr)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="1130" y="570" text-anchor="end" font-family="'Segoe UI',system-ui,Arial,sans-serif" font-size="20" fill="#58786c">Not affiliated with OpenAI or Microsoft</text>
+</svg>
